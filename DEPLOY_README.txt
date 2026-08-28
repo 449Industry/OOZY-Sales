@@ -1,4 +1,4 @@
-OOZY Admin Web v1.0.4
+OOZY Admin Web v1.0.6
 
 Target GitHub repository is fixed:
   https://github.com/449Industry/OOZY-Sales
@@ -16,7 +16,7 @@ Deployment:
 7. GitHub Pages is enabled with GitHub Actions.
 8. The script waits for the workflow and opens the final page.
 
-Both GITHUB_DEPLOY.bat and legacy GITHUB_DEPLOY_OOZY.bat now redirect to the same v1.0.4 deploy script.
+Both GITHUB_DEPLOY.bat and legacy GITHUB_DEPLOY_OOZY.bat now redirect to the same deploy script.
 The log file is github_deploy.log.
 
 Updater target:

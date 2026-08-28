@@ -47,8 +47,8 @@
     <div class="workspace">
       <aside class="sidebar no-print">
         <button class="nav active" data-page="dashboard"><span>⌂</span>대시보드</button>
-        <button class="nav" data-page="oozySales"><span>₩</span>OOZY 매출</button>
-        <button class="nav" data-page="oozyPurchase"><span>▤</span>OOZY 매입</button>
+        <button class="nav" data-page="oozySales"><span>₩</span>우지 매출</button>
+        <button class="nav" data-page="oozyPurchase"><span>▤</span>우지 매입</button>
         <button class="nav" data-page="kcem"><span>▦</span>박물관 장부</button>
         <button class="nav" data-page="uwash"><span>◫</span>유워시 장부</button>
       </aside>
@@ -59,9 +59,9 @@
             <div><h2>오늘 현황</h2><p id="dashboardDateText" class="muted"></p></div>
             <button class="button outline print-button no-print">인쇄</button>
           </div>
-          <div id="dashboardKpis" class="kpi-grid five"></div>
+          <div id="dashboardKpis" class="kpi-grid"></div>
           <div class="dashboard-grid">
-            <article class="panel"><div class="panel-head"><h3>OOZY</h3><button class="text-link no-print" data-go="oozySales">자세히</button></div><div id="dashboardOozy"></div></article>
+            <article class="panel"><div class="panel-head"><h3>우지(OOZY)</h3><button class="text-link no-print" data-go="oozySales">자세히</button></div><div id="dashboardOozy"></div></article>
             <article class="panel"><div class="panel-head"><h3>박물관</h3><button class="text-link no-print" data-go="kcem">장부 보기</button></div><div id="dashboardKcem"></div></article>
             <article class="panel"><div class="panel-head"><h3>유워시</h3><button class="text-link no-print" data-go="uwash">장부 보기</button></div><div id="dashboardUwash"></div></article>
             <article class="panel"><div class="panel-head"><h3>동기화 상태</h3></div><div id="dashboardSync"></div></article>
@@ -70,7 +70,7 @@
 
         <section id="oozySalesPage" class="page">
           <div class="page-title-row">
-            <div><h2>OOZY 매출</h2><p class="muted">Supabase에 확정된 매출을 조회합니다.</p></div>
+            <div><h2>우지 매출</h2><p class="muted">우지커피 단독 매출입니다. 박물관·유워시 매출은 합산하지 않습니다.</p></div>
             <button class="button outline print-button no-print">인쇄</button>
           </div>
           <div class="toolbar no-print">
@@ -83,7 +83,7 @@
 
         <section id="oozyPurchasePage" class="page">
           <div class="page-title-row">
-            <div><h2>OOZY 매입</h2><p class="muted">SPC 매입과 본사 매입의 확정 합계입니다.</p></div>
+            <div><h2>우지 매입</h2><p class="muted">우지커피의 SPC 매입과 본사 매입 확정 합계입니다.</p></div>
             <button class="button outline print-button no-print">인쇄</button>
           </div>
           <div class="toolbar no-print">
