@@ -96,10 +96,10 @@ function Copy-CanonicalWeb([string]$Destination) {
 }
 
 try {
-    Set-Content -LiteralPath $logPath -Value "OOZY Sales GitHub Pages Deploy v1.0.7`r`nStarted: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')`r`nFolder: $PSScriptRoot`r`nRepository: $repoFull" -Encoding UTF8
+    Set-Content -LiteralPath $logPath -Value "OOZY Sales GitHub Pages Deploy v1.0.8`r`nStarted: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')`r`nFolder: $PSScriptRoot`r`nRepository: $repoFull" -Encoding UTF8
 
     Write-Host '============================================================'
-    Write-Host ' OOZY Sales - GitHub Pages Deploy v1.0.7'
+    Write-Host ' OOZY Sales - GitHub Pages Deploy v1.0.8'
     Write-Host '============================================================'
     Write-Host "Local folder : $PSScriptRoot"
     Write-Host "Repository   : https://github.com/$repoFull"
@@ -111,7 +111,7 @@ try {
         throw 'index.html was not found. Run this script from C:\449INDUSTRIES\oozySales\v1\web.'
     }
     if (-not (Test-Path -LiteralPath (Join-Path $PSScriptRoot '.github\workflows\pages.yml'))) {
-        throw '.github\workflows\pages.yml was not found. Apply the v1.0.7 web update first.'
+        throw '.github\workflows\pages.yml was not found. Apply the v1.0.8 web update first.'
     }
 
     Write-Host '[1/8] Checking Git...'
@@ -173,10 +173,10 @@ try {
         Run-External -File 'git.exe' -Arguments @('add','--all')
         & git.exe diff --cached --quiet
         if ($LASTEXITCODE -ne 0) {
-            Run-External -File 'git.exe' -Arguments @('commit','-m','Deploy OOZY integrated admin web v1.0.7')
+            Run-External -File 'git.exe' -Arguments @('commit','-m','Deploy OOZY integrated admin web v1.0.8')
             Run-External -File 'git.exe' -Arguments @('push','origin','main')
         } else {
-            Write-Host '[INFO] Repository already matches v1.0.7 deployment files.'
+            Write-Host '[INFO] Repository already matches v1.0.8 deployment files.'
         }
     }
     finally {

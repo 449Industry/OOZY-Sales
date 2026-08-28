@@ -1,4 +1,4 @@
-OOZY Admin Web v1.0.7
+OOZY Admin Web v1.0.8
 
 Target GitHub repository is fixed:
   https://github.com/449Industry/OOZY-Sales

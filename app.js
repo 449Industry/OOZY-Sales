@@ -203,7 +203,16 @@
     let rows; try{rows=await selectRange("oozy_daily_sales","business_date",r);}catch(e){$("oozyPurchaseBody").innerHTML=errorBox(e.message);return;}
     const spc=sum(rows,"purchase_spc_total"), hq=sum(rows,"purchase_headquarters_total"), total=sum(rows,"purchase_total");
     kpis($("oozyPurchaseKpis"),[{label:"총 매입",value:total},{label:"SPC",value:spc},{label:"본사",value:hq},{label:"기간 매출",value:sum(rows,"total"),cls:"blue"}]);
-    $("oozyPurchaseBody").innerHTML=rows.length?`<div class="table-wrap"><table class="table"><thead><tr><th>날짜</th><th class="num">SPC</th><th class="num">본사</th><th class="num">총 매입</th><th class="num">매출</th></tr></thead><tbody>${rows.map(x=>`<tr><td>${esc(x.business_date)}</td><td class="num">${won(x.purchase_spc_total)}</td><td class="num">${won(x.purchase_headquarters_total)}</td><td class="num"><strong>${won(x.purchase_total)}</strong></td><td class="num">${won(x.total)}</td></tr>`).join("")}<tr class="total-row"><td>합계</td><td class="num">${won(spc)}</td><td class="num">${won(hq)}</td><td class="num">${won(total)}</td><td class="num">${won(sum(rows,"total"))}</td></tr></tbody></table></div>`:empty();
+    if(mode==="day"){
+      const x=rows[0]||{};
+      $("oozyPurchaseBody").innerHTML=rows.length?`<div class="table-wrap"><table class="table"><thead><tr><th>항목</th><th class="num">금액</th></tr></thead><tbody><tr><td>SPC 매입</td><td class="num">${won(x.purchase_spc_total)}</td></tr><tr><td>본사 매입</td><td class="num">${won(x.purchase_headquarters_total)}</td></tr><tr class="total-row"><td>총 매입</td><td class="num"><strong>${won(x.purchase_total)}</strong></td></tr></tbody></table></div>`:empty();
+    } else if(mode==="month"){
+      $("oozyPurchaseBody").innerHTML=calendarSection(key,state.period[key],dailyTotals(rows,"business_date","purchase_total"),"우지 매입");
+      bindCalendarClicks($("oozyPurchaseBody"),key);
+    } else {
+      $("oozyPurchaseBody").innerHTML=yearCalendarSection(key,state.period[key],monthlyTotals(rows,"business_date","purchase_total"),"우지 매입");
+      bindYearCalendarClicks($("oozyPurchaseBody"),key);
+    }
   }
 
   async function loadKcem(){
