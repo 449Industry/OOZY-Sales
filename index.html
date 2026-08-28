@@ -3,71 +3,127 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>OOZY 매출관리</title>
+  <meta name="color-scheme" content="light" />
+  <title>OOZY 통합 매출관리</title>
   <link rel="stylesheet" href="styles.css" />
-</head>
-<body>
-  <div id="loginView" class="center-view">
-    <section class="login-card">
-      <div class="brand">OOZY</div>
-      <h1>매출·매입 관리</h1>
-      <p class="muted">관리자/확인자 계정으로 로그인해 일·월·연 매출을 확인합니다.</p>
-      <label>로그인 ID / 이메일</label>
-      <input id="loginEmail" type="text" autocomplete="username" placeholder="로그인 ID 또는 이메일" />
-      <label>비밀번호</label>
-      <input id="loginPassword" type="password" autocomplete="current-password" />
-      <button id="loginButton" class="primary">로그인</button>
-      <div id="loginMessage" class="message"></div>
-    </section>
-  </div>
-
-  <div id="appView" class="app hidden">
-    <header class="header">
-      <div class="header-brand"><strong>OOZY</strong><span>매출·매입 관리</span></div>
-      <nav>
-        <button data-page="daily" class="nav active">일매출</button>
-        <button data-page="month" class="nav">월매출</button>
-        <button data-page="year" class="nav">연매출</button>
-      </nav>
-      <div class="account"><span id="accountLabel"></span><button id="logoutButton">로그아웃</button></div>
-    </header>
-
-    <main>
-      <section id="dailyPage" class="page">
-        <div class="page-head">
-          <div><h2>일매출 확인</h2><p id="syncText" class="muted"></p></div>
-          <div class="date-nav"><button id="prevDay">◀ 전일</button><input id="dailyDate" type="date" /><button id="nextDay">후일 ▶</button></div>
-        </div>
-        <div id="dailyKpis" class="kpi-grid six"></div>
-        <div class="two-col">
-          <section class="panel"><h3>매출 구성</h3><div id="dailySalesTable"></div></section>
-          <section class="panel"><h3>매입</h3><div id="dailyPurchaseTable"></div></section>
-        </div>
-      </section>
-
-      <section id="monthPage" class="page hidden">
-        <div class="page-head">
-          <div><h2>월매출</h2><p class="muted">날짜를 클릭하면 해당 일매출로 이동합니다.</p></div>
-          <div class="date-nav"><button id="prevMonth">◀</button><input id="monthPicker" type="month" /><button id="nextMonth">▶</button></div>
-        </div>
-        <div id="monthKpis" class="kpi-grid four"></div>
-        <section class="panel"><div id="monthCalendar" class="calendar"></div></section>
-        <section class="panel"><h3>배달 채널 월 합계</h3><div id="monthDelivery"></div></section>
-      </section>
-
-      <section id="yearPage" class="page hidden">
-        <div class="page-head">
-          <div><h2>연매출</h2><p class="muted">월을 클릭하면 월매출로 이동합니다.</p></div>
-          <div class="date-nav"><button id="prevYear">◀</button><input id="yearInput" type="number" min="2000" max="2100" /><button id="nextYear">▶</button></div>
-        </div>
-        <div id="yearKpis" class="kpi-grid four"></div>
-        <div id="yearCards" class="year-grid"></div>
-      </section>
-    </main>
-  </div>
-
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="config.js"></script>
   <script src="login_aliases.js"></script>
+</head>
+<body>
+  <div id="toast" class="toast hidden"></div>
+
+  <main id="loginView" class="login-shell">
+    <section class="login-card">
+      <div class="brand-mark">O</div>
+      <div>
+        <h1>OOZY 통합 매출관리</h1>
+        <p>OOZY · 박물관 · 유워시 매출/장부 조회</p>
+      </div>
+      <label class="field-label" for="loginId">관리자 아이디 또는 이메일</label>
+      <input id="loginId" class="input" autocomplete="username" placeholder="관리자 계정" />
+      <label class="field-label" for="loginPassword">비밀번호</label>
+      <input id="loginPassword" class="input" type="password" autocomplete="current-password" placeholder="비밀번호" />
+      <button id="loginButton" class="button primary full">로그인</button>
+      <div id="loginMessage" class="login-message"></div>
+      <p class="login-note">이 웹은 조회·출력 전용입니다. 거래 생성/수정은 기존 프로그램과 장부 앱에서 처리합니다.</p>
+    </section>
+  </main>
+
+  <div id="appView" class="app hidden">
+    <header class="topbar no-print">
+      <div class="top-brand">
+        <div class="brand-mark small">O</div>
+        <div><strong>OOZY 통합 매출관리</strong><span>관리자 조회 웹</span></div>
+      </div>
+      <div class="top-actions">
+        <span id="refreshStatus" class="status-pill">연결 중</span>
+        <button id="refreshButton" class="button ghost">새로고침</button>
+        <span id="accountLabel" class="account"></span>
+        <button id="logoutButton" class="button ghost">로그아웃</button>
+      </div>
+    </header>
+
+    <div class="workspace">
+      <aside class="sidebar no-print">
+        <button class="nav active" data-page="dashboard"><span>⌂</span>대시보드</button>
+        <button class="nav" data-page="oozySales"><span>₩</span>OOZY 매출</button>
+        <button class="nav" data-page="oozyPurchase"><span>▤</span>OOZY 매입</button>
+        <button class="nav" data-page="kcem"><span>▦</span>박물관 장부</button>
+        <button class="nav" data-page="uwash"><span>◫</span>유워시 장부</button>
+      </aside>
+
+      <section class="content">
+        <section id="dashboardPage" class="page active">
+          <div class="page-title-row">
+            <div><h2>오늘 현황</h2><p id="dashboardDateText" class="muted"></p></div>
+            <button class="button outline print-button no-print">인쇄</button>
+          </div>
+          <div id="dashboardKpis" class="kpi-grid five"></div>
+          <div class="dashboard-grid">
+            <article class="panel"><div class="panel-head"><h3>OOZY</h3><button class="text-link no-print" data-go="oozySales">자세히</button></div><div id="dashboardOozy"></div></article>
+            <article class="panel"><div class="panel-head"><h3>박물관</h3><button class="text-link no-print" data-go="kcem">장부 보기</button></div><div id="dashboardKcem"></div></article>
+            <article class="panel"><div class="panel-head"><h3>유워시</h3><button class="text-link no-print" data-go="uwash">장부 보기</button></div><div id="dashboardUwash"></div></article>
+            <article class="panel"><div class="panel-head"><h3>동기화 상태</h3></div><div id="dashboardSync"></div></article>
+          </div>
+        </section>
+
+        <section id="oozySalesPage" class="page">
+          <div class="page-title-row">
+            <div><h2>OOZY 매출</h2><p class="muted">Supabase에 확정된 매출을 조회합니다.</p></div>
+            <button class="button outline print-button no-print">인쇄</button>
+          </div>
+          <div class="toolbar no-print">
+            <div class="segmented" data-mode-group="oozySales"><button class="active" data-mode="day">일</button><button data-mode="month">월</button><button data-mode="year">연</button></div>
+            <div id="oozySalesPeriod"></div>
+          </div>
+          <div id="oozySalesKpis" class="kpi-grid"></div>
+          <article class="panel"><div id="oozySalesBody"></div></article>
+        </section>
+
+        <section id="oozyPurchasePage" class="page">
+          <div class="page-title-row">
+            <div><h2>OOZY 매입</h2><p class="muted">SPC 매입과 본사 매입의 확정 합계입니다.</p></div>
+            <button class="button outline print-button no-print">인쇄</button>
+          </div>
+          <div class="toolbar no-print">
+            <div class="segmented" data-mode-group="oozyPurchase"><button class="active" data-mode="day">일</button><button data-mode="month">월</button><button data-mode="year">연</button></div>
+            <div id="oozyPurchasePeriod"></div>
+          </div>
+          <div id="oozyPurchaseKpis" class="kpi-grid"></div>
+          <article class="panel"><div id="oozyPurchaseBody"></div></article>
+        </section>
+
+        <section id="kcemPage" class="page">
+          <div class="page-title-row">
+            <div><h2>박물관 장부</h2><p class="muted">KCEM 매출 장부 · 조회/출력 전용</p></div>
+            <button class="button outline print-button no-print">인쇄</button>
+          </div>
+          <div class="toolbar no-print">
+            <div class="segmented" data-mode-group="kcem"><button class="active" data-mode="day">일</button><button data-mode="month">월</button><button data-mode="year">연</button></div>
+            <div id="kcemPeriod"></div>
+          </div>
+          <div id="kcemKpis" class="kpi-grid"></div>
+          <article class="panel"><div id="kcemBody"></div></article>
+        </section>
+
+        <section id="uwashPage" class="page">
+          <div class="page-title-row">
+            <div><h2>유워시 장부</h2><p class="muted">세차용품 / 수동충전 장부 · 조회/출력 전용</p></div>
+            <button class="button outline print-button no-print">인쇄</button>
+          </div>
+          <div class="toolbar no-print wrap">
+            <div class="segmented big" id="uwashLedgerTabs"><button class="active" data-ledger="supply">세차용품</button><button data-ledger="manual">수동충전</button></div>
+            <div class="segmented" data-mode-group="uwash"><button class="active" data-mode="day">일</button><button data-mode="month">월</button><button data-mode="year">연</button></div>
+            <div id="uwashPeriod"></div>
+          </div>
+          <div id="uwashKpis" class="kpi-grid"></div>
+          <article class="panel"><div id="uwashBody"></div></article>
+        </section>
+      </section>
+    </div>
+  </div>
+
   <script src="app.js"></script>
 </body>
 </html>
