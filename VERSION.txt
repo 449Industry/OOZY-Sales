@@ -1,1 +1,1 @@
-OOZY Admin Web v1.0.6
+OOZY Admin Web v1.0.7

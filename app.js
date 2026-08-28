@@ -47,6 +47,39 @@
       renderPeriodControl(key); refreshCurrent(false);
     });
   }
+  function monthlyTotals(rows,dateKey,amountKey,filterFn=null){
+    const out={};
+    rows.forEach(r=>{
+      if(filterFn && !filterFn(r)) return;
+      const d=String(r[dateKey]||"");
+      if(d.length<7) return;
+      const month=d.slice(0,7);
+      out[month]=(out[month]||0)+num(r[amountKey]);
+    });
+    return out;
+  }
+  function yearCalendarHtml(yearValue, totals, amountLabel="매출"){
+    const y=String(yearValue).slice(0,4);
+    const cells=[];
+    for(let m=1;m<=12;m++){
+      const month=`${y}-${String(m).padStart(2,"0")}`;
+      const amount=num(totals[month]);
+      cells.push(`<button type="button" class="year-month-cell" data-calendar-month="${month}-01"><span class="year-month-number">${m}월</span><span class="year-month-label">${esc(amountLabel)}</span><strong class="year-month-amount">${amount?won(amount):"-"}</strong></button>`);
+    }
+    return `<div class="year-sales-calendar">${cells.join("")}</div>`;
+  }
+  function yearCalendarSection(key, yearValue, totals, amountLabel="매출"){
+    const y=String(yearValue).slice(0,4);
+    return `<div class="calendar-section year-calendar-section"><div class="calendar-section-head"><strong>${esc(y)}년 연간 달력</strong><span>월을 누르면 해당 월 달력으로 이동합니다.</span></div>${yearCalendarHtml(y,totals,amountLabel)}</div>`;
+  }
+  function bindYearCalendarClicks(host,key){
+    qsa("[data-calendar-month]",host).forEach(btn=>btn.onclick=()=>{
+      state.mode[key]="month"; state.period[key]=btn.dataset.calendarMonth;
+      const group=qs(`[data-mode-group="${key}"]`);
+      if(group) qsa("button[data-mode]",group).forEach(x=>x.classList.toggle("active",x.dataset.mode==="month"));
+      renderPeriodControl(key); refreshCurrent(false);
+    });
+  }
 
   if(!window.supabase || !cfg.supabaseUrl || !cfg.publishableKey){ $("loginMessage").textContent="Supabase 설정 또는 라이브러리를 불러오지 못했습니다."; return; }
   const sb = window.supabase.createClient(cfg.supabaseUrl, cfg.publishableKey, {auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});
@@ -156,10 +189,12 @@
     kpis($("oozySalesKpis"),[{label:"우지 총매출",value:total},{label:"POS",value:pos},{label:"배달",value:delivery},{label:"카드 + 현금",value:card+cash}]);
     if(mode==="day"){
       const x=rows[0]||{}; $("oozySalesBody").innerHTML=`<div class="period-summary"><div class="mini-card"><span>카드</span><strong>${won(x.card)}</strong></div><div class="mini-card"><span>현금</span><strong>${won(x.cash)}</strong></div><div class="mini-card"><span>배달</span><strong>${won(x.delivery_total)}</strong></div></div><div class="table-wrap"><table class="table"><thead><tr><th>항목</th><th class="num">금액</th></tr></thead><tbody><tr><td>배달의민족</td><td class="num">${won(x.baemin)}</td></tr><tr><td>쿠팡이츠</td><td class="num">${won(x.coupang)}</td></tr><tr><td>OOZY 오더</td><td class="num">${won(x.oozy_order)}</td></tr><tr><td>기타 배달</td><td class="num">${won(x.other_delivery)}</td></tr><tr class="total-row"><td>우지 총매출</td><td class="num">${won(x.total)}</td></tr></tbody></table></div>`;
+    } else if(mode==="month"){
+      $("oozySalesBody").innerHTML=calendarSection(key,state.period[key],dailyTotals(rows,"business_date","total"),"우지 매출");
+      bindCalendarClicks($("oozySalesBody"),key);
     } else {
-      const table=rows.length?`<div class="table-wrap"><table class="table"><thead><tr><th>날짜</th><th class="num">카드</th><th class="num">현금</th><th class="num">배달</th><th class="num">우지 매출</th></tr></thead><tbody>${rows.map(x=>`<tr><td>${esc(x.business_date)}</td><td class="num">${won(x.card)}</td><td class="num">${won(x.cash)}</td><td class="num">${won(x.delivery_total)}</td><td class="num"><strong>${won(x.total)}</strong></td></tr>`).join("")}<tr class="total-row"><td>합계</td><td class="num">${won(card)}</td><td class="num">${won(cash)}</td><td class="num">${won(delivery)}</td><td class="num">${won(total)}</td></tr></tbody></table></div>`:empty();
-      const cal=mode==="month"?calendarSection(key,state.period[key],dailyTotals(rows,"business_date","total"),"우지 매출"):"";
-      $("oozySalesBody").innerHTML=cal+table; if(mode==="month") bindCalendarClicks($("oozySalesBody"),key);
+      $("oozySalesBody").innerHTML=yearCalendarSection(key,state.period[key],monthlyTotals(rows,"business_date","total"),"우지 매출");
+      bindYearCalendarClicks($("oozySalesBody"),key);
     }
   }
 
@@ -176,9 +211,15 @@
     let rows; try{ rows=await selectRange("kcem_sales","sale_date",r,"transaction_key,sale_date,sale_time,item_name,payment_method,amount,quantity,comment,created_at"); rows.sort((a,b)=>`${b.sale_date} ${b.sale_time}`.localeCompare(`${a.sale_date} ${a.sale_time}`)); }catch(e){$("kcemBody").innerHTML=errorBox(e.message);return;}
     const cash=rows.filter(x=>["현금","계좌","시루"].includes(x.payment_method)).reduce((a,x)=>a+num(x.amount),0), card=rows.filter(x=>x.payment_method==="카드").reduce((a,x)=>a+num(x.amount),0), total=cash+card;
     kpis($("kcemKpis"),[{label:"현금계",value:cash},{label:"카드",value:card},{label:"박물관 총매출",value:total},{label:"거래금액 평균",value:rows.length?Math.round(total/rows.length):0,cls:"blue"}]);
-    const table=rows.length?`<div class="table-wrap"><table class="table"><thead><tr>${mode!=="day"?"<th>날짜</th>":""}<th>시간</th><th>결제</th><th class="num">금액</th><th>판매품목</th><th class="center">수량</th><th>비고</th></tr></thead><tbody>${rows.map(x=>`<tr>${mode!=="day"?`<td>${esc(x.sale_date)}</td>`:""}<td>${esc(fmtTime(x.sale_time))}</td><td>${badgePayment(x.payment_method)}</td><td class="num"><strong>${won(x.amount)}</strong></td><td>${esc(x.item_name)}</td><td class="center">${num(x.quantity)||1}</td><td>${esc(x.comment||"")}</td></tr>`).join("")}</tbody></table></div>`:empty();
-    const cal=mode==="month"?calendarSection(key,state.period[key],dailyTotals(rows,"sale_date","amount"),"박물관 매출"):"";
-    $("kcemBody").innerHTML=cal+table; if(mode==="month") bindCalendarClicks($("kcemBody"),key);
+    if(mode==="day"){
+      $("kcemBody").innerHTML=rows.length?`<div class="table-wrap"><table class="table"><thead><tr><th>시간</th><th>결제</th><th class="num">금액</th><th>판매품목</th><th class="center">수량</th><th>비고</th></tr></thead><tbody>${rows.map(x=>`<tr><td>${esc(fmtTime(x.sale_time))}</td><td>${badgePayment(x.payment_method)}</td><td class="num"><strong>${won(x.amount)}</strong></td><td>${esc(x.item_name)}</td><td class="center">${num(x.quantity)||1}</td><td>${esc(x.comment||"")}</td></tr>`).join("")}</tbody></table></div>`:empty();
+    } else if(mode==="month"){
+      $("kcemBody").innerHTML=calendarSection(key,state.period[key],dailyTotals(rows,"sale_date","amount"),"박물관 매출");
+      bindCalendarClicks($("kcemBody"),key);
+    } else {
+      $("kcemBody").innerHTML=yearCalendarSection(key,state.period[key],monthlyTotals(rows,"sale_date","amount"),"박물관 매출");
+      bindYearCalendarClicks($("kcemBody"),key);
+    }
   }
 
   async function loadUwash(){
@@ -190,9 +231,15 @@
     let rows; try{rows=await selectRange("uwash_supply_sales","sale_date",r,"transaction_key,sale_date,item_name,payment_method,amount,comment,local_updated_at"); rows.sort((a,b)=>String(b.local_updated_at||b.sale_date).localeCompare(String(a.local_updated_at||a.sale_date)));}catch(e){$("uwashBody").innerHTML=errorBox(e.message);return;}
     const cash=rows.filter(x=>["현금","계좌"].includes(x.payment_method)).reduce((a,x)=>a+num(x.amount),0), card=rows.filter(x=>x.payment_method==="카드").reduce((a,x)=>a+num(x.amount),0), total=cash+card;
     kpis($("uwashKpis"),[{label:"현금계",value:cash},{label:"카드",value:card},{label:"세차용품 매출",value:total},{label:"판매 건수",value:rows.length,sub:"금액이 아닌 건수",cls:"blue"}]);
-    const table=rows.length?`<div class="table-wrap"><table class="table"><thead><tr>${mode!=="day"?"<th>날짜</th>":""}<th>시간</th><th>결제</th><th>품목</th><th class="num">금액</th><th>비고</th></tr></thead><tbody>${rows.map(x=>`<tr>${mode!=="day"?`<td>${esc(x.sale_date)}</td>`:""}<td>${esc(fmtTime(x.local_updated_at))}</td><td>${badgePayment(x.payment_method)}</td><td>${esc(x.item_name)}</td><td class="num"><strong>${won(x.amount)}</strong></td><td>${esc(x.comment||"")}</td></tr>`).join("")}</tbody></table></div>`:empty();
-    const cal=mode==="month"?calendarSection(key,state.period[key],dailyTotals(rows,"sale_date","amount"),"세차용품 매출"):"";
-    $("uwashBody").innerHTML=cal+table; if(mode==="month") bindCalendarClicks($("uwashBody"),key);
+    if(mode==="day"){
+      $("uwashBody").innerHTML=rows.length?`<div class="table-wrap"><table class="table"><thead><tr><th>시간</th><th>결제</th><th>품목</th><th class="num">금액</th><th>비고</th></tr></thead><tbody>${rows.map(x=>`<tr><td>${esc(fmtTime(x.local_updated_at))}</td><td>${badgePayment(x.payment_method)}</td><td>${esc(x.item_name)}</td><td class="num"><strong>${won(x.amount)}</strong></td><td>${esc(x.comment||"")}</td></tr>`).join("")}</tbody></table></div>`:empty();
+    } else if(mode==="month"){
+      $("uwashBody").innerHTML=calendarSection(key,state.period[key],dailyTotals(rows,"sale_date","amount"),"세차용품 매출");
+      bindCalendarClicks($("uwashBody"),key);
+    } else {
+      $("uwashBody").innerHTML=yearCalendarSection(key,state.period[key],monthlyTotals(rows,"sale_date","amount"),"세차용품 매출");
+      bindYearCalendarClicks($("uwashBody"),key);
+    }
   }
 
   async function loadUwashManual(r,mode){
@@ -206,9 +253,15 @@
     const recorded=actual.filter(x=>x.decision==="record"), cash=recorded.filter(x=>["현금","계좌"].includes(x.payment_method)).reduce((a,x)=>a+num(x.sales_amount),0), card=recorded.filter(x=>x.payment_method==="카드").reduce((a,x)=>a+num(x.sales_amount),0), total=cash+card;
     kpis($("uwashKpis"),[{label:"현금계",value:cash},{label:"카드",value:card},{label:"수동충전 매출",value:total},{label:"매칭 대기",value:pending.length,sub:"건수",cls:"blue"}]);
     const merged=[...actual.map(x=>({...x,_kind:"actual",_sort:String(x.local_updated_at||`${x.sale_date} ${x.event_time||""}`)})),...pending.map(x=>({...x,_kind:"pending",_sort:String(x.created_at||x.sale_date)}))].sort((a,b)=>b._sort.localeCompare(a._sort));
-    const table=merged.length?`<div class="table-wrap"><table class="table"><thead><tr>${mode!=="day"?"<th>날짜</th>":""}<th>시간</th><th>상태</th><th>결제</th><th class="num">충전금액</th><th class="num">실수납</th><th>비고</th></tr></thead><tbody>${merged.map(x=>{const pend=x._kind==="pending", status=pend?'<span class="badge pending">매칭 대기</span>':x.decision==="record"?'<span class="badge cash">기록</span>':x.decision==="ignore"?'<span class="badge ignore">무시</span>':'<span class="badge pending">미확인</span>';return `<tr>${mode!=="day"?`<td>${esc(x.sale_date)}</td>`:""}<td>${esc(pend?fmtTime(x.created_at):fmtTime(x.event_time||x.local_updated_at))}</td><td>${status}</td><td>${x.payment_method?badgePayment(x.payment_method):"-"}</td><td class="num">${won(x.charge_amount)}</td><td class="num"><strong>${x.sales_amount==null?"-":won(x.sales_amount)}</strong></td><td>${esc(x.comment||"")}</td></tr>`;}).join("")}</tbody></table></div><p class="section-note">매출 합계는 실제 수동충전 중 ‘기록’ 확정 건만 포함합니다. 매칭 대기 사전입력은 합계에서 제외됩니다.</p>`:empty();
-    const cal=mode==="month"?calendarSection(key,state.period[key],dailyTotals(recorded,"sale_date","sales_amount"),"수동충전 매출"):"";
-    $("uwashBody").innerHTML=cal+table; if(mode==="month") bindCalendarClicks($("uwashBody"),key);
+    if(mode==="day"){
+      $("uwashBody").innerHTML=merged.length?`<div class="table-wrap"><table class="table"><thead><tr><th>시간</th><th>상태</th><th>결제</th><th class="num">충전금액</th><th class="num">실수납</th><th>비고</th></tr></thead><tbody>${merged.map(x=>{const pend=x._kind==="pending", status=pend?'<span class="badge pending">매칭 대기</span>':x.decision==="record"?'<span class="badge cash">기록</span>':x.decision==="ignore"?'<span class="badge ignore">무시</span>':'<span class="badge pending">미확인</span>';return `<tr><td>${esc(pend?fmtTime(x.created_at):fmtTime(x.event_time||x.local_updated_at))}</td><td>${status}</td><td>${x.payment_method?badgePayment(x.payment_method):"-"}</td><td class="num">${won(x.charge_amount)}</td><td class="num"><strong>${x.sales_amount==null?"-":won(x.sales_amount)}</strong></td><td>${esc(x.comment||"")}</td></tr>`;}).join("")}</tbody></table></div><p class="section-note">매출 합계는 실제 수동충전 중 ‘기록’ 확정 건만 포함합니다. 매칭 대기 사전입력은 합계에서 제외됩니다.</p>`:empty();
+    } else if(mode==="month"){
+      $("uwashBody").innerHTML=calendarSection(key,state.period[key],dailyTotals(recorded,"sale_date","sales_amount"),"수동충전 매출");
+      bindCalendarClicks($("uwashBody"),key);
+    } else {
+      $("uwashBody").innerHTML=yearCalendarSection(key,state.period[key],monthlyTotals(recorded,"sale_date","sales_amount"),"수동충전 매출");
+      bindYearCalendarClicks($("uwashBody"),key);
+    }
   }
 
   async function refreshCurrent(showToast=false,background=false){
