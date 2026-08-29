@@ -182,13 +182,40 @@
     $("dashboardSync").innerHTML=sync?lines([{label:"OOZY 최종 업로드",value:fmtDateTime(sync.generated_at)},{label:"업로드 일수",value:`${num(sync.daily_count)}일`},{label:"앱 버전",value:sync.app_version||"-"}]):empty("OOZY Supabase 업로드 기록이 없습니다.");
   }
 
+  async function loadSeparateBusinessDailySales(day){
+    const r={start:day,end:day};
+    const res=await Promise.allSettled([
+      selectRange("kcem_sales","sale_date",r,"payment_method,amount"),
+      selectRange("uwash_supply_sales","sale_date",r,"payment_method,amount"),
+      selectRange("uwash_manual_charge","sale_date",r,"payment_method,sales_amount,decision")
+    ]);
+    const kcem=res[0].status==="fulfilled"?res[0].value:[];
+    const supply=res[1].status==="fulfilled"?res[1].value:[];
+    const manual=res[2].status==="fulfilled"?res[2].value:[];
+    const kcemCash=kcem.filter(x=>["현금","계좌","시루"].includes(x.payment_method)).reduce((a,x)=>a+num(x.amount),0);
+    const kcemCard=kcem.filter(x=>x.payment_method==="카드").reduce((a,x)=>a+num(x.amount),0);
+    const kcemTotal=kcemCash+kcemCard;
+    const supplyTotal=sum(supply,"amount");
+    const manualTotal=manual.filter(x=>x.decision==="record").reduce((a,x)=>a+num(x.sales_amount),0);
+    const uwashTotal=supplyTotal+manualTotal;
+    const errors=res.filter(x=>x.status==="rejected").map(x=>x.reason?.message||String(x.reason||"조회 오류"));
+    return {kcemCash,kcemCard,kcemTotal,supplyTotal,manualTotal,uwashTotal,errors};
+  }
+
+  function separateBusinessDailyHtml(info){
+    const warning=info.errors.length?`<div class="separate-sales-warning">일부 별도 사업장 자료를 불러오지 못했습니다: ${esc(info.errors.join(" / "))}</div>`:"";
+    return `<section class="separate-sales-block"><div class="separate-sales-head"><div><strong>별도 사업장 매출</strong><span>우지 총매출 미포함</span></div><em>참고 기록</em></div>${warning}<div class="separate-sales-grid"><div class="separate-sales-group"><h4>박물관</h4><div><span>현금계 <small>(현금+계좌+시루)</small></span><strong>${won(info.kcemCash)}</strong></div><div><span>카드</span><strong>${won(info.kcemCard)}</strong></div><div class="separate-total"><span>박물관 총매출</span><strong>${won(info.kcemTotal)}</strong></div></div><div class="separate-sales-group"><h4>유워시</h4><div><span>세차용품</span><strong>${won(info.supplyTotal)}</strong></div><div><span>수동충전</span><strong>${won(info.manualTotal)}</strong></div><div class="separate-total"><span>유워시 총매출</span><strong>${won(info.uwashTotal)}</strong></div></div></div><p class="separate-sales-note">※ 위 금액은 별도 사업장 매출이며 우지 총매출 및 우지 매입 계산에 합산되지 않습니다.</p></section>`;
+  }
+
   async function loadOozySales(){
     const key="oozySales", mode=state.mode[key], r=rangeFor(mode,mode==="day"?state.period[key]:mode==="month"?state.period[key].slice(0,7):state.period[key].slice(0,4));
     let rows; try{rows=await selectRange("oozy_daily_sales","business_date",r);}catch(e){$("oozySalesBody").innerHTML=errorBox(e.message);return;}
     const total=sum(rows,"total"), pos=sum(rows,"pos_total"), delivery=sum(rows,"delivery_total"), card=sum(rows,"card"), cash=sum(rows,"cash");
     kpis($("oozySalesKpis"),[{label:"우지 총매출",value:total},{label:"POS",value:pos},{label:"배달",value:delivery},{label:"카드 + 현금",value:card+cash}]);
     if(mode==="day"){
-      const x=rows[0]||{}; $("oozySalesBody").innerHTML=`<div class="period-summary"><div class="mini-card"><span>카드</span><strong>${won(x.card)}</strong></div><div class="mini-card"><span>현금</span><strong>${won(x.cash)}</strong></div><div class="mini-card"><span>배달</span><strong>${won(x.delivery_total)}</strong></div></div><div class="table-wrap"><table class="table"><thead><tr><th>항목</th><th class="num">금액</th></tr></thead><tbody><tr><td>배달의민족</td><td class="num">${won(x.baemin)}</td></tr><tr><td>쿠팡이츠</td><td class="num">${won(x.coupang)}</td></tr><tr><td>OOZY 오더</td><td class="num">${won(x.oozy_order)}</td></tr><tr><td>기타 배달</td><td class="num">${won(x.other_delivery)}</td></tr><tr class="total-row"><td>우지 총매출</td><td class="num">${won(x.total)}</td></tr></tbody></table></div>`;
+      const x=rows[0]||{};
+      const separate=await loadSeparateBusinessDailySales(r.start);
+      $("oozySalesBody").innerHTML=`<div class="period-summary"><div class="mini-card"><span>카드</span><strong>${won(x.card)}</strong></div><div class="mini-card"><span>현금</span><strong>${won(x.cash)}</strong></div><div class="mini-card"><span>배달</span><strong>${won(x.delivery_total)}</strong></div></div><div class="table-wrap"><table class="table"><thead><tr><th>항목</th><th class="num">금액</th></tr></thead><tbody><tr><td>배달의민족</td><td class="num">${won(x.baemin)}</td></tr><tr><td>쿠팡이츠</td><td class="num">${won(x.coupang)}</td></tr><tr><td>OOZY 오더</td><td class="num">${won(x.oozy_order)}</td></tr><tr><td>기타 배달</td><td class="num">${won(x.other_delivery)}</td></tr><tr class="total-row"><td>우지 총매출</td><td class="num">${won(x.total)}</td></tr></tbody></table></div>${separateBusinessDailyHtml(separate)}`;
     } else if(mode==="month"){
       $("oozySalesBody").innerHTML=calendarSection(key,state.period[key],dailyTotals(rows,"business_date","total"),"우지 매출");
       bindCalendarClicks($("oozySalesBody"),key);

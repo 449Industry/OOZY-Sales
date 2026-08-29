@@ -25,3 +25,6 @@ ZIP root:
   v1\web\...
 Result:
   C:\449INDUSTRIES\oozySales\v1\web\...
+
+
+v1.0.9: OOZY daily sales print now includes separate KCEM/U-WASH reference sales. These values are NOT included in OOZY totals.
