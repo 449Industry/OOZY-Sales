@@ -83,9 +83,12 @@
 
   if(!window.supabase || !cfg.supabaseUrl || !cfg.publishableKey){ $("loginMessage").textContent="Supabase 설정 또는 라이브러리를 불러오지 못했습니다."; return; }
   const sb = window.supabase.createClient(cfg.supabaseUrl, cfg.publishableKey, {auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});
+  const CURRENT_REQUEST_SITE = "OOZY";
+  const REQUEST_SOURCE_LABEL = {UWASH:"UWASH",OOZY:"OOZY",KCEM:"KCEM"};
   const state = {
     page:"dashboard", user:null, mode:{oozySales:"day",oozyPurchase:"day",kcem:"day",uwash:"day"},
     period:{oozySales:todayKst(),oozyPurchase:todayKst(),kcem:todayKst(),uwash:todayKst()}, uwashLedger:"supply",
+    requestRows:[], requestMode:"pending", editingRequestKey:null, requestDbReady:true,
     timer:null, refreshing:false, lastRefresh:null
   };
 
@@ -123,6 +126,7 @@
     $("loginView").classList.add("hidden"); $("appView").classList.remove("hidden");
     $("accountLabel").textContent=state.user?.email||"관리자";
     setupPeriodControls();
+    resetRequestForm();
     await refreshCurrent(true);
     startPolling();
   }
@@ -300,12 +304,229 @@
     }
   }
 
+
+
+  // v1.0.10 shared purchase requests ---------------------------------------
+  function requestKey(){
+    if(globalThis.crypto?.randomUUID) return crypto.randomUUID();
+    return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g,c=>{const r=Math.random()*16|0,v=c==="x"?r:(r&3|8);return v.toString(16);});
+  }
+  function requestSourceClass(source){ return `source-${String(source||"").toLowerCase()}`; }
+  function requestPriorityClass(priority){ return `priority-${Math.min(5,Math.max(1,Number(priority)||3))}`; }
+  function requestDateTimeText(v){
+    if(!v) return "-";
+    try{return new Date(v).toLocaleString("ko-KR",{timeZone:"Asia/Seoul",year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",hour12:false});}
+    catch(_){return String(v);}
+  }
+  function parseRequestMoney(text){
+    const s=String(text||"").replace(/,/g,"");
+    const hits=[...s.matchAll(/(\d+(?:\.\d+)?)\s*(만원|천원|원|만)(?![가-힣])/g)];
+    if(hits.length){
+      const m=hits[hits.length-1]; let v=Number(m[1]);
+      if(m[2]==="만원"||m[2]==="만") v*=10000;
+      else if(m[2]==="천원") v*=1000;
+      return {value:Math.round(v),raw:m[0]};
+    }
+    const bare=[...s.matchAll(/(?:^|\s)(\d{4,})(?=\s|$)/g)];
+    if(bare.length){ const m=bare[bare.length-1]; return {value:Number(m[1]),raw:m[1]}; }
+    return null;
+  }
+  function parseRequestNaturalData(raw){
+    const text=String(raw||"").trim();
+    if(!text) return null;
+    let priority=3;
+    const pm=text.match(/([1-5])\s*(?:순위|순|등급)/);
+    if(pm) priority=Number(pm[1]);
+    else if(/긴급|급함|급하게|최우선/.test(text)) priority=1;
+    else if(/여유|나중/.test(text)) priority=5;
+    const money=parseRequestMoney(text);
+    const qm=text.match(/(\d+(?:\.\d+)?)\s*(개|세트|박스|통|봉|팩|롤|ea)(?=\s|$|[,./])/i);
+    const qty=qm?Number(qm[1]):1;
+    let item=text;
+    if(pm)item=item.replace(pm[0]," ");
+    item=item.replace(/긴급|급함|급하게|최우선/g," ");
+    if(money)item=item.replace(money.raw," ");
+    if(qm)item=item.replace(qm[0]," ");
+    item=item.replace(/(?:^|\s)(구매요청|구매|구입|필요|요청)(?=\s|$)/g," ").replace(/\s+/g," ").trim();
+    if(!item)item="구매요청";
+    return {request_date:todayKst(),priority,item_name:item,quantity:qty,estimated_amount:money?money.value:null,memo:null};
+  }
+  function requestNumberInput(id, fallback=null){
+    const raw=String($(id)?.value||"").replace(/,/g,"").trim();
+    if(!raw) return fallback;
+    const n=Number(raw); return Number.isFinite(n)?n:fallback;
+  }
+  function setRequestMessage(message, isError=false){
+    const el=$("requestMessage"); if(!el) return;
+    el.textContent=message||""; el.classList.toggle("error",!!isError);
+  }
+  function setRequestBusy(button,busy,busyLabel){
+    if(!button) return;
+    if(busy){ button.dataset.normalLabel=button.textContent; button.textContent=busyLabel; button.disabled=true; }
+    else { button.textContent=button.dataset.normalLabel||button.textContent; button.disabled=false; }
+  }
+  function resetRequestForm(){
+    if(!$("requestDate")) return;
+    state.editingRequestKey=null;
+    $("requestDate").value=todayKst();
+    $("requestPriority").value="3";
+    $("requestItem").value="";
+    $("requestQuantity").value="1";
+    $("requestAmount").value="";
+    $("requestMemo").value="";
+    $("requestSave").textContent="수동 저장";
+    setRequestMessage("");
+  }
+  function requestDbFailure(error){
+    console.error("shared_purchase_requests",error);
+    state.requestDbReady=false;
+    const notice=$("requestDbNotice");
+    if(notice){
+      notice.classList.remove("hidden");
+      notice.innerHTML=`공동 구매요청을 불러오지 못했습니다. 새 테이블을 만들지 말고 UWash에서 사용 중인 <b>public.shared_purchase_requests</b>와 RLS 권한을 확인해 주세요.<br><small>${esc(error?.message||String(error||"조회 오류"))}</small>`;
+    }
+    $("requestBody").innerHTML=`<tr><td colspan="8">${errorBox(error?.message||String(error||"조회 오류"))}</td></tr>`;
+  }
+  function requestDbSuccess(){
+    state.requestDbReady=true;
+    $("requestDbNotice")?.classList.add("hidden");
+  }
+  async function fetchPurchaseRequests(){
+    const {data,error}=await sb.from("shared_purchase_requests").select("*").order("priority",{ascending:true}).order("created_at",{ascending:false});
+    if(error) throw error;
+    state.requestRows=data||[];
+    requestDbSuccess();
+    renderPurchaseRequests();
+  }
+  function filteredPurchaseRequests(){
+    const source=$("requestSourceFilter")?.value||"";
+    const priority=$("requestPriorityFilter")?.value||"";
+    const search=($("requestSearch")?.value||"").trim().toLowerCase();
+    let rows=state.requestRows.filter(r=>(r.status||"pending")===state.requestMode);
+    if(source) rows=rows.filter(r=>r.source_site===source);
+    if(priority) rows=rows.filter(r=>String(r.priority||3)===priority);
+    if(search) rows=rows.filter(r=>[r.item_name,r.memo,r.purpose].some(v=>String(v||"").toLowerCase().includes(search)));
+    if(state.requestMode==="pending"){
+      rows.sort((a,b)=>(Number(a.priority||3)-Number(b.priority||3)) || String(b.created_at||b.local_updated_at||"").localeCompare(String(a.created_at||a.local_updated_at||"")));
+    }else{
+      rows.sort((a,b)=>String(b.completed_at||b.local_updated_at||"").localeCompare(String(a.completed_at||a.local_updated_at||"")));
+    }
+    return rows;
+  }
+  function requestActionButtons(row){
+    const key=esc(row.request_key);
+    const own=row.source_site===CURRENT_REQUEST_SITE;
+    const completion=(row.status||"pending")==="completed"
+      ? `<button class="request-action restore" data-request-action="restore" data-request-key="${key}">완료취소</button>`
+      : `<button class="request-action complete" data-request-action="complete" data-request-key="${key}">구매완료</button>`;
+    const ownButtons=own?`<button class="request-action edit" data-request-action="edit" data-request-key="${key}">수정</button><button class="request-action delete" data-request-action="delete" data-request-key="${key}">삭제</button>`:"";
+    return `<div class="request-actions">${completion}${ownButtons}</div>`;
+  }
+  function renderPurchaseRequests(){
+    if(!$("requestBody")) return;
+    const pendingCount=state.requestRows.filter(r=>(r.status||"pending")==="pending").length;
+    const completedCount=state.requestRows.filter(r=>r.status==="completed").length;
+    $("requestPendingCount").textContent=String(pendingCount);
+    $("requestCompletedCount").textContent=String(completedCount);
+    $("requestPendingMode").classList.toggle("active",state.requestMode==="pending");
+    $("requestCompletedMode").classList.toggle("active",state.requestMode==="completed");
+    const rows=filteredPurchaseRequests();
+    $("requestSummary").textContent=`${rows.length}건 표시`;
+    if(!rows.length){
+      $("requestBody").innerHTML=`<tr><td colspan="8">${empty(state.requestMode==="completed"?"구매완료 내역이 없습니다.":"진행중 구매요청이 없습니다.")}</td></tr>`;
+      return;
+    }
+    $("requestBody").innerHTML=rows.map(row=>{
+      const completed=row.status==="completed";
+      const source=REQUEST_SOURCE_LABEL[row.source_site]||row.source_site||"-";
+      const completion=completed?`<small class="request-completed-at">완료 ${esc(requestDateTimeText(row.completed_at))}</small>`:"";
+      const memo=[row.memo,row.purpose].filter(Boolean).join(row.memo&&row.purpose?" · ":"");
+      const amount=row.estimated_amount==null||row.estimated_amount===""?"-":won(row.estimated_amount);
+      return `<tr class="${completed?"request-completed-row":""}"><td><strong>${esc(row.request_date||"")}</strong>${completion}</td><td><span class="request-source ${requestSourceClass(row.source_site)}">${esc(source)}</span></td><td><span class="request-priority ${requestPriorityClass(row.priority)}">${esc(String(row.priority||3))}순위</span></td><td class="request-item-cell"><strong>${esc(row.item_name||"")}</strong></td><td class="center">${esc(row.quantity==null?"1":row.quantity)}</td><td class="num">${amount}</td><td>${esc(memo||"")}</td><td class="center no-print">${requestActionButtons(row)}</td></tr>`;
+    }).join("");
+    qsa("[data-request-action]",$("requestBody")).forEach(btn=>btn.onclick=()=>handleRequestAction(btn.dataset.requestAction,btn.dataset.requestKey));
+  }
+  async function quickAddPurchaseRequest(){
+    const input=$("requestNatural"), parsed=parseRequestNaturalData(input.value);
+    if(!parsed){ setRequestMessage("자연어 입력 내용을 적어 주세요.",true); input.focus(); return; }
+    const button=$("requestQuickAdd"); setRequestBusy(button,true,"추가 중..."); setRequestMessage("");
+    const now=new Date().toISOString();
+    const body={request_key:requestKey(),request_date:parsed.request_date,source_site:CURRENT_REQUEST_SITE,priority:parsed.priority,item_name:parsed.item_name,quantity:parsed.quantity,estimated_amount:parsed.estimated_amount,purpose:null,memo:parsed.memo,status:"pending",completed_at:null,completed_by:null,created_by:state.user?.id||null,created_at:now,local_updated_at:now};
+    try{
+      const {error}=await sb.from("shared_purchase_requests").insert(body); if(error) throw error;
+      input.value=""; setRequestMessage(`추가 완료 · ${body.priority}순위 · ${body.item_name}`); toast("공동 구매요청에 추가했습니다."); await fetchPurchaseRequests();
+    }catch(e){ requestDbFailure(e); setRequestMessage("추가 실패: "+e.message,true); }
+    finally{setRequestBusy(button,false,"추가 중...");}
+  }
+  async function saveManualPurchaseRequest(){
+    const item=$("requestItem").value.trim(); if(!item){setRequestMessage("품목·요청내용을 입력해 주세요.",true);$("requestItem").focus();return;}
+    const qty=requestNumberInput("requestQuantity",1); if(!(qty>0)){setRequestMessage("수량은 0보다 크게 입력해 주세요.",true);return;}
+    const amount=requestNumberInput("requestAmount",null); if(amount!=null && amount<0){setRequestMessage("예상금액을 확인해 주세요.",true);return;}
+    const button=$("requestSave"); setRequestBusy(button,true,state.editingRequestKey?"수정 중...":"저장 중..."); setRequestMessage("");
+    const now=new Date().toISOString();
+    try{
+      if(state.editingRequestKey){
+        const row=state.requestRows.find(r=>r.request_key===state.editingRequestKey);
+        if(!row || row.source_site!==CURRENT_REQUEST_SITE) throw new Error("OOZY에서 작성한 요청만 수정할 수 있습니다.");
+        const update={request_date:$("requestDate").value||todayKst(),priority:Number($("requestPriority").value||3),item_name:item,quantity:qty,estimated_amount:amount,memo:$("requestMemo").value.trim()||null,local_updated_at:now};
+        const {error}=await sb.from("shared_purchase_requests").update(update).eq("request_key",state.editingRequestKey).eq("source_site",CURRENT_REQUEST_SITE); if(error) throw error;
+        toast("구매요청을 수정했습니다.");
+      }else{
+        const body={request_key:requestKey(),request_date:$("requestDate").value||todayKst(),source_site:CURRENT_REQUEST_SITE,priority:Number($("requestPriority").value||3),item_name:item,quantity:qty,estimated_amount:amount,purpose:null,memo:$("requestMemo").value.trim()||null,status:"pending",completed_at:null,completed_by:null,created_by:state.user?.id||null,created_at:now,local_updated_at:now};
+        const {error}=await sb.from("shared_purchase_requests").insert(body); if(error) throw error;
+        toast("공동 구매요청에 저장했습니다.");
+      }
+      resetRequestForm(); await fetchPurchaseRequests();
+    }catch(e){ requestDbFailure(e); setRequestMessage("저장 실패: "+e.message,true); }
+    finally{setRequestBusy(button,false,"저장 중..."); if(!state.editingRequestKey) $("requestSave").textContent="수동 저장";}
+  }
+  function editPurchaseRequest(key){
+    const row=state.requestRows.find(r=>r.request_key===key); if(!row) return;
+    if(row.source_site!==CURRENT_REQUEST_SITE){toast("UWASH/KCEM 요청은 이 사이트에서 수정할 수 없습니다.");return;}
+    state.editingRequestKey=key;
+    $("requestDate").value=row.request_date||todayKst();
+    $("requestPriority").value=String(row.priority||3);
+    $("requestItem").value=row.item_name||"";
+    $("requestQuantity").value=row.quantity==null?1:row.quantity;
+    $("requestAmount").value=row.estimated_amount==null?"":row.estimated_amount;
+    $("requestMemo").value=row.memo||"";
+    $("requestSave").textContent="수정 저장";
+    setRequestMessage("OOZY 요청 수정 중");
+    $("requestItem").focus();
+    window.scrollTo({top:0,behavior:"smooth"});
+  }
+  async function setRequestCompletion(key,completed){
+    const now=new Date().toISOString();
+    const update=completed?{status:"completed",completed_at:now,completed_by:state.user?.id||null,local_updated_at:now}:{status:"pending",completed_at:null,completed_by:null,local_updated_at:now};
+    const {error}=await sb.from("shared_purchase_requests").update(update).eq("request_key",key); if(error) throw error;
+    toast(completed?"구매완료로 이동했습니다.":"진행중으로 되돌렸습니다."); await fetchPurchaseRequests();
+  }
+  async function deletePurchaseRequest(key){
+    const row=state.requestRows.find(r=>r.request_key===key); if(!row) return;
+    if(row.source_site!==CURRENT_REQUEST_SITE){toast("OOZY에서 작성한 요청만 삭제할 수 있습니다.");return;}
+    if(!confirm(`'${row.item_name||"구매요청"}' 요청을 삭제할까요?`)) return;
+    const {error}=await sb.from("shared_purchase_requests").delete().eq("request_key",key).eq("source_site",CURRENT_REQUEST_SITE); if(error) throw error;
+    if(state.editingRequestKey===key) resetRequestForm(); toast("구매요청을 삭제했습니다."); await fetchPurchaseRequests();
+  }
+  async function handleRequestAction(action,key){
+    try{
+      if(action==="edit") editPurchaseRequest(key);
+      else if(action==="delete") await deletePurchaseRequest(key);
+      else if(action==="complete") await setRequestCompletion(key,true);
+      else if(action==="restore") await setRequestCompletion(key,false);
+    }catch(e){requestDbFailure(e);toast("처리 실패: "+e.message);}
+  }
+  async function loadPurchaseRequests(){
+    try{await fetchPurchaseRequests();}catch(e){requestDbFailure(e);}
+  }
+
   async function refreshCurrent(showToast=false,background=false){
     if(state.refreshing) return; state.refreshing=true; if(!background)setRefresh("새로고침 중");
     try{
       if(state.page==="dashboard") await loadDashboard();
       else if(state.page==="oozySales") await loadOozySales();
       else if(state.page==="oozyPurchase") await loadOozyPurchase();
+      else if(state.page==="purchaseRequests") await loadPurchaseRequests();
       else if(state.page==="kcem") await loadKcem();
       else if(state.page==="uwash") await loadUwash();
       state.lastRefresh=new Date(); setRefresh(`최신 ${state.lastRefresh.toLocaleTimeString("ko-KR",{hour:"2-digit",minute:"2-digit",second:"2-digit"})}`); if(showToast)toast("최신 DB 값으로 갱신했습니다.");
@@ -318,6 +539,16 @@
   qsa("[data-mode-group]").forEach(group=>qsa("button[data-mode]",group).forEach(b=>b.onclick=()=>{ const key=group.dataset.modeGroup; state.mode[key]=b.dataset.mode; qsa("button",group).forEach(x=>x.classList.toggle("active",x===b)); renderPeriodControl(key); refreshCurrent(false); }));
   qsa("#uwashLedgerTabs button").forEach(b=>b.onclick=()=>{state.uwashLedger=b.dataset.ledger;qsa("#uwashLedgerTabs button").forEach(x=>x.classList.toggle("active",x===b));refreshCurrent(false);});
   qsa(".print-button").forEach(b=>b.onclick=()=>window.print());
+  $("requestQuickAdd").onclick=quickAddPurchaseRequest;
+  $("requestNatural").onkeydown=e=>{if(e.key==="Enter"){e.preventDefault();quickAddPurchaseRequest();}};
+  $("requestSave").onclick=saveManualPurchaseRequest;
+  $("requestReset").onclick=resetRequestForm;
+  $("requestRefreshButton").onclick=()=>loadPurchaseRequests();
+  $("requestPendingMode").onclick=()=>{state.requestMode="pending";renderPurchaseRequests();};
+  $("requestCompletedMode").onclick=()=>{state.requestMode="completed";renderPurchaseRequests();};
+  $("requestSourceFilter").onchange=renderPurchaseRequests;
+  $("requestPriorityFilter").onchange=renderPurchaseRequests;
+  $("requestSearch").oninput=renderPurchaseRequests;
   $("loginButton").onclick=login; $("loginPassword").onkeydown=e=>{if(e.key==="Enter")login();}; $("logoutButton").onclick=logout; $("refreshButton").onclick=()=>refreshCurrent(true);
 
   (async()=>{ const {data}=await sb.auth.getSession(); if(data?.session){state.user=data.session.user;await afterLogin();} })();

@@ -18,7 +18,7 @@
       <div class="brand-mark">O</div>
       <div>
         <h1>OOZY 통합 매출관리</h1>
-        <p>OOZY · 박물관 · 유워시 매출/장부 조회</p>
+        <p>OOZY · 박물관 · 유워시 매출/장부 조회 · 공동 구매요청</p>
       </div>
       <label class="field-label" for="loginId">관리자 아이디 또는 이메일</label>
       <input id="loginId" class="input" autocomplete="username" placeholder="관리자 계정" />
@@ -26,7 +26,7 @@
       <input id="loginPassword" class="input" type="password" autocomplete="current-password" placeholder="비밀번호" />
       <button id="loginButton" class="button primary full">로그인</button>
       <div id="loginMessage" class="login-message"></div>
-      <p class="login-note">이 웹은 조회·출력 전용입니다. 거래 생성/수정은 기존 프로그램과 장부 앱에서 처리합니다.</p>
+      <p class="login-note">매출·장부는 조회/출력 중심이며, 공동 구매요청은 UWASH · OOZY · KCEM이 같은 DB를 함께 사용합니다.</p>
     </section>
   </main>
 
@@ -34,7 +34,12 @@
     <header class="topbar no-print">
       <div class="top-brand">
         <div class="brand-mark small">O</div>
-        <div><strong>OOZY 통합 매출관리</strong><span>관리자 조회 웹</span></div>
+        <div><strong>OOZY 통합 매출관리</strong><span>관리자 웹</span></div>
+        <nav class="site-switcher" aria-label="다른 매출 사이트 이동">
+          <a class="uwash" href="https://449industry.github.io/uwash/">UWASH</a>
+          <span class="site-switch-sep">|</span>
+          <a class="kcem" href="https://449industry.github.io/KCEM-Sales/">KCEM Sales</a>
+        </nav>
       </div>
       <div class="top-actions">
         <span id="refreshStatus" class="status-pill">연결 중</span>
@@ -49,6 +54,7 @@
         <button class="nav active" data-page="dashboard"><span>⌂</span>대시보드</button>
         <button class="nav" data-page="oozySales"><span>₩</span>우지 매출</button>
         <button class="nav" data-page="oozyPurchase"><span>▤</span>우지 매입</button>
+        <button class="nav" data-page="purchaseRequests"><span>✓</span>구매요청</button>
         <button class="nav" data-page="kcem"><span>▦</span>박물관 장부</button>
         <button class="nav" data-page="uwash"><span>◫</span>유워시 장부</button>
       </aside>
@@ -92,6 +98,56 @@
           </div>
           <div id="oozyPurchaseKpis" class="kpi-grid"></div>
           <article class="panel"><div id="oozyPurchaseBody"></div></article>
+        </section>
+
+
+        <section id="purchaseRequestsPage" class="page">
+          <div class="page-title-row request-title-row">
+            <div><h2>공동 구매요청</h2><p class="muted">UWASH · OOZY · KCEM이 같은 Supabase 구매요청을 함께 사용합니다. OOZY에서 작성한 요청은 자동으로 OOZY로 기록됩니다.</p></div>
+            <button id="requestRefreshButton" class="button outline no-print">새로고침</button>
+          </div>
+
+          <div id="requestDbNotice" class="request-notice hidden">공동 구매요청 테이블을 불러오지 못했습니다. UWash에서 사용 중인 <b>public.shared_purchase_requests</b>와 현재 계정 권한을 확인해 주세요.</div>
+
+          <article class="panel request-entry-panel no-print">
+            <div class="request-natural-row">
+              <input id="requestNatural" class="request-input" autocomplete="off" placeholder="자연어 바로추가 · 예: 1순위 우유 4박스 내일 필요 12만원" />
+              <button id="requestQuickAdd" class="button primary">바로 추가</button>
+            </div>
+            <div class="request-form-grid">
+              <label><span>요청일</span><input id="requestDate" type="date" /></label>
+              <label><span>우선순위</span><select id="requestPriority"><option value="1">1순위 · 긴급</option><option value="2">2순위</option><option value="3" selected>3순위</option><option value="4">4순위</option><option value="5">5순위</option></select></label>
+              <label class="request-item-field"><span>품목 · 요청내용</span><input id="requestItem" placeholder="예: 우유 / 빨대 / 소모품" /></label>
+              <label><span>수량</span><input id="requestQuantity" inputmode="decimal" value="1" /></label>
+              <label><span>예상금액</span><input id="requestAmount" inputmode="numeric" placeholder="선택" /></label>
+              <label class="request-memo-field"><span>메모</span><input id="requestMemo" placeholder="필요할 때만" /></label>
+            </div>
+            <div class="request-form-footer">
+              <div id="requestMessage" class="request-message"></div>
+              <button id="requestReset" class="button ghost">비우기</button>
+              <button id="requestSave" class="button primary">수동 저장</button>
+            </div>
+          </article>
+
+          <div class="request-toolbar no-print">
+            <div class="request-mode-buttons">
+              <button id="requestPendingMode" class="button request-mode active">진행중 <span id="requestPendingCount">0</span></button>
+              <button id="requestCompletedMode" class="button request-mode">구매완료 <span id="requestCompletedCount">0</span></button>
+            </div>
+            <select id="requestSourceFilter"><option value="">전체 사업장</option><option value="UWASH">UWASH</option><option value="OOZY">OOZY</option><option value="KCEM">KCEM</option></select>
+            <select id="requestPriorityFilter"><option value="">전체 우선순위</option><option value="1">1순위</option><option value="2">2순위</option><option value="3">3순위</option><option value="4">4순위</option><option value="5">5순위</option></select>
+            <input id="requestSearch" class="request-search" placeholder="품목 · 메모 검색" />
+            <span id="requestSummary" class="request-summary"></span>
+          </div>
+
+          <article class="panel request-list-panel">
+            <div class="table-wrap request-table-wrap">
+              <table class="table request-table">
+                <thead><tr><th>요청일</th><th>출처</th><th>우선순위</th><th>품목 / 요청</th><th class="center">수량</th><th class="num">예상금액</th><th>메모</th><th class="center no-print">관리</th></tr></thead>
+                <tbody id="requestBody"></tbody>
+              </table>
+            </div>
+          </article>
         </section>
 
         <section id="kcemPage" class="page">

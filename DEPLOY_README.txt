@@ -1,4 +1,4 @@
-OOZY Admin Web v1.0.8
+OOZY Admin Web v1.0.10
 
 Target GitHub repository is fixed:
   https://github.com/449Industry/OOZY-Sales
@@ -28,3 +28,6 @@ Result:
 
 
 v1.0.9: OOZY daily sales print now includes separate KCEM/U-WASH reference sales. These values are NOT included in OOZY totals.
+
+
+v1.0.10: Added shared purchase requests using existing public.shared_purchase_requests. No new DB migration.
