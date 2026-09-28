@@ -1,4 +1,4 @@
-OOZY 통합 관리자 웹 v1.0.11
+OOZY 통합 관리자 웹 v1.0.12
 ========================================
 목적
 - 관리자 계정 하나로 OOZY / 박물관 / 유워시를 조회합니다.
@@ -108,4 +108,13 @@ v1.0.11: 공동 구매요청 메모의 URL을 자동 링크로 표시합니다.
 - target="_blank" + rel="noopener noreferrer"
 - 일반 텍스트는 HTML escape 후 표시
 - 수정창에서는 원본 메모 텍스트 그대로 편집
+- DB/SQL 변경 없음
+
+
+v1.0.12: Supabase 웹 설정 호환성 수정.
+- OOZY_ADMIN_CONFIG / OOZY_WEB_CONFIG 둘 다 인식
+- publishableKey / anonKey / anon_key 모두 인식
+- 기존 config.js를 덮어쓰지 않아도 동작
+- jsDelivr 실패 시 unpkg Supabase 라이브러리 fallback
+- 메모 URL 새 탭 링크(v1.0.11) 유지
 - DB/SQL 변경 없음

@@ -1,6 +1,8 @@
 (() => {
   "use strict";
-  const cfg = window.OOZY_ADMIN_CONFIG || {};
+  const cfg = window.OOZY_ADMIN_CONFIG || window.OOZY_WEB_CONFIG || {};
+  const supabaseUrl = cfg.supabaseUrl || cfg.url || "";
+  const supabaseKey = cfg.publishableKey || cfg.anonKey || cfg.anon_key || "";
   const aliases = window.OOZY_ADMIN_LOGIN_ALIASES || {};
   const $ = (id) => document.getElementById(id);
   const qs = (s, root=document) => root.querySelector(s);
@@ -107,8 +109,15 @@
     });
   }
 
-  if(!window.supabase || !cfg.supabaseUrl || !cfg.publishableKey){ $("loginMessage").textContent="Supabase 설정 또는 라이브러리를 불러오지 못했습니다."; return; }
-  const sb = window.supabase.createClient(cfg.supabaseUrl, cfg.publishableKey, {auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});
+  if(!window.supabase){
+    $("loginMessage").textContent="Supabase 라이브러리를 불러오지 못했습니다. 인터넷 연결 후 새로고침해 주세요.";
+    return;
+  }
+  if(!supabaseUrl || !supabaseKey){
+    $("loginMessage").textContent="Supabase 설정을 찾지 못했습니다. config.js를 확인해 주세요.";
+    return;
+  }
+  const sb = window.supabase.createClient(supabaseUrl, supabaseKey, {auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});
   const CURRENT_REQUEST_SITE = "OOZY";
   const REQUEST_SOURCE_LABEL = {UWASH:"UWASH",OOZY:"OOZY",KCEM:"KCEM"};
   const state = {
@@ -332,7 +341,7 @@
 
 
 
-  // v1.0.11 shared purchase requests + clickable memo URLs ------------------
+  // v1.0.12 shared purchase requests + memo URLs + config compatibility -------
   function requestKey(){
     if(globalThis.crypto?.randomUUID) return crypto.randomUUID();
     return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g,c=>{const r=Math.random()*16|0,v=c==="x"?r:(r&3|8);return v.toString(16);});
