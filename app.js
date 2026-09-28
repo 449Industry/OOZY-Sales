@@ -8,6 +8,32 @@
   const won = (n) => `${Number(n || 0).toLocaleString("ko-KR")}원`;
   const num = (n) => Number(n || 0);
   const esc = (v) => String(v ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
+  function linkifyRequestMemo(value){
+    const text=String(value??"");
+    if(!text) return "";
+    const urlRe=/(?:https?:\/\/|www\.)[^\s<>"']+/gi;
+    let out="",last=0;
+    for(const match of text.matchAll(urlRe)){
+      const index=match.index??0;
+      out+=esc(text.slice(last,index));
+      let core=match[0],trailing="";
+      while(core && /[),.!?;:\]}〉》」』]$/.test(core)){
+        trailing=core.slice(-1)+trailing;
+        core=core.slice(0,-1);
+      }
+      if(!core){
+        out+=esc(match[0]);
+      }else{
+        const href=/^www\./i.test(core)?`https://${core}`:core;
+        out+=`<a class="request-memo-link" href="${esc(href)}" target="_blank" rel="noopener noreferrer">${esc(core)}</a>${esc(trailing)}`;
+      }
+      last=index+match[0].length;
+    }
+    out+=esc(text.slice(last));
+    return out;
+  }
+
+
   const todayKst = () => new Intl.DateTimeFormat("sv-SE", {timeZone:"Asia/Seoul",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
   const fmtTime = (v) => { if(!v) return ""; const s=String(v); if(s.includes("T")){ try{return new Date(s).toLocaleTimeString("ko-KR",{hour:"2-digit",minute:"2-digit",timeZone:"Asia/Seoul"});}catch(_){}} return s.slice(0,8); };
   const fmtDateTime = (v) => { if(!v) return "-"; try{return new Date(v).toLocaleString("ko-KR",{timeZone:"Asia/Seoul",hour12:false});}catch(_){return String(v);} };
@@ -306,7 +332,7 @@
 
 
 
-  // v1.0.10 shared purchase requests ---------------------------------------
+  // v1.0.11 shared purchase requests + clickable memo URLs ------------------
   function requestKey(){
     if(globalThis.crypto?.randomUUID) return crypto.randomUUID();
     return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g,c=>{const r=Math.random()*16|0,v=c==="x"?r:(r&3|8);return v.toString(16);});
@@ -442,7 +468,7 @@
       const completion=completed?`<small class="request-completed-at">완료 ${esc(requestDateTimeText(row.completed_at))}</small>`:"";
       const memo=[row.memo,row.purpose].filter(Boolean).join(row.memo&&row.purpose?" · ":"");
       const amount=row.estimated_amount==null||row.estimated_amount===""?"-":won(row.estimated_amount);
-      return `<tr class="${completed?"request-completed-row":""}"><td><strong>${esc(row.request_date||"")}</strong>${completion}</td><td><span class="request-source ${requestSourceClass(row.source_site)}">${esc(source)}</span></td><td><span class="request-priority ${requestPriorityClass(row.priority)}">${esc(String(row.priority||3))}순위</span></td><td class="request-item-cell"><strong>${esc(row.item_name||"")}</strong></td><td class="center">${esc(row.quantity==null?"1":row.quantity)}</td><td class="num">${amount}</td><td>${esc(memo||"")}</td><td class="center no-print">${requestActionButtons(row)}</td></tr>`;
+      return `<tr class="${completed?"request-completed-row":""}"><td><strong>${esc(row.request_date||"")}</strong>${completion}</td><td><span class="request-source ${requestSourceClass(row.source_site)}">${esc(source)}</span></td><td><span class="request-priority ${requestPriorityClass(row.priority)}">${esc(String(row.priority||3))}순위</span></td><td class="request-item-cell"><strong>${esc(row.item_name||"")}</strong></td><td class="center">${esc(row.quantity==null?"1":row.quantity)}</td><td class="num">${amount}</td><td class="request-memo-cell">${linkifyRequestMemo(memo||"")}</td><td class="center no-print">${requestActionButtons(row)}</td></tr>`;
     }).join("");
     qsa("[data-request-action]",$("requestBody")).forEach(btn=>btn.onclick=()=>handleRequestAction(btn.dataset.requestAction,btn.dataset.requestKey));
   }

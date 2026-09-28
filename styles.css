@@ -43,3 +43,10 @@
 @media(max-width:700px){.request-natural-row{grid-template-columns:1fr}.request-form-grid{grid-template-columns:1fr 1fr}.request-item-field,.request-memo-field{grid-column:1/-1}.request-toolbar{align-items:stretch}.request-mode-buttons{width:100%}.request-mode-buttons .button{flex:1}.request-toolbar select,.request-search{min-width:0;flex:1}.site-switcher{display:none}}
 @media(max-width:480px){.request-form-grid{grid-template-columns:1fr}.request-item-field,.request-memo-field{grid-column:auto}.request-form-footer{flex-wrap:wrap}.request-message{width:100%;margin:0}.request-toolbar select,.request-search{width:100%;flex-basis:100%}}
 @media print{#purchaseRequestsPage .request-toolbar{display:none!important}.request-table-wrap{max-height:none}.request-completed-row{background:#eee!important}.request-source{border:1px solid #777!important;color:#000!important;background:#fff!important}}
+
+
+/* v1.0.11 purchase-request memo links */
+.request-memo-cell{overflow-wrap:anywhere;word-break:break-word}
+.request-memo-link{color:#183F23;font-weight:800;text-decoration:underline;text-underline-offset:2px}
+.request-memo-link:hover{color:#0f2917}
+.request-completed-row .request-memo-link{color:#566b5b}

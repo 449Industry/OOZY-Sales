@@ -1,4 +1,4 @@
-OOZY Admin Web v1.0.10
+OOZY Admin Web v1.0.11
 
 Target GitHub repository is fixed:
   https://github.com/449Industry/OOZY-Sales
@@ -31,3 +31,12 @@ v1.0.9: OOZY daily sales print now includes separate KCEM/U-WASH reference sales
 
 
 v1.0.10: Added shared purchase requests using existing public.shared_purchase_requests. No new DB migration.
+
+
+v1.0.11: 공동 구매요청 메모의 URL을 자동 링크로 표시합니다.
+- http://, https://, www. 지원
+- 새 탭에서 열기
+- target="_blank" + rel="noopener noreferrer"
+- 일반 텍스트는 HTML escape 후 표시
+- 수정창에서는 원본 메모 텍스트 그대로 편집
+- DB/SQL 변경 없음
