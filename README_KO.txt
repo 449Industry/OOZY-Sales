@@ -118,3 +118,11 @@ v1.0.12: Supabase 웹 설정 호환성 수정.
 - jsDelivr 실패 시 unpkg Supabase 라이브러리 fallback
 - 메모 URL 새 탭 링크(v1.0.11) 유지
 - DB/SQL 변경 없음
+
+
+[Web v1.0.13 - 선결제 장부]
+- 선결제 장부가 Supabase 기반 웹 CRUD로 추가되었습니다.
+- 최초 1회 v1/supabase/OOZY_PREPAID_MIGRATION_20261012.sql 실행이 필요합니다.
+- 이관 검증 기준: 경자고 27건/잔액 289,300원, 단골분들 6건/잔액 0원.
+- 1차 검증 전까지 데스크톱 선결제 장부는 기존 로컬 DB를 그대로 사용합니다.
+  웹 검증 완료 후 다음 단계에서 데스크톱을 Supabase 원본으로 전환합니다.

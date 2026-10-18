@@ -124,6 +124,7 @@
     page:"dashboard", user:null, mode:{oozySales:"day",oozyPurchase:"day",kcem:"day",uwash:"day"},
     period:{oozySales:todayKst(),oozyPurchase:todayKst(),kcem:todayKst(),uwash:todayKst()}, uwashLedger:"supply",
     requestRows:[], requestMode:"pending", editingRequestKey:null, requestDbReady:true,
+    prepaidLedgers:[], prepaidEntries:[], prepaidSelectedKey:null, prepaidDbReady:true,
     timer:null, refreshing:false, lastRefresh:null
   };
 
@@ -136,7 +137,9 @@
   function errorBox(msg){
     const text=String(msg||"");
     let hint="로그인 계정의 조회 권한을 확인해 주세요.";
-    if(/oozy_daily_sales|oozy_monthly_delivery_overrides|oozy_sync_status|oozy_profiles/i.test(text) && /schema cache|could not find|does not exist/i.test(text)){
+    if(/oozy_prepaid_ledgers|oozy_prepaid_entries/i.test(text) && /schema cache|could not find|does not exist/i.test(text)){
+      hint="선결제 DB가 아직 없습니다. Supabase SQL Editor에서 supabase/OOZY_PREPAID_MIGRATION_20261012.sql을 실행해 주세요.";
+    } else if(/oozy_daily_sales|oozy_monthly_delivery_overrides|oozy_sync_status|oozy_profiles/i.test(text) && /schema cache|could not find|does not exist/i.test(text)){
       hint="OOZY DB 테이블이 아직 없습니다. Supabase SQL Editor에서 supabase/OOZY_DB_SETUP.sql을 한 번 실행해 주세요.";
     } else if(/permission|row-level security|policy|not authorized|401|403/i.test(text)){
       hint="통합 관리자 역할 또는 RLS 권한을 확인해 주세요. 필요하면 supabase/INTEGRATED_ADMIN_SETUP.sql을 실행해 주세요.";
@@ -340,6 +343,198 @@
   }
 
 
+
+
+  // v1.0.13 OOZY prepaid ledger (Supabase authoritative) -----------------
+  const PREPAID_LEDGER_TABLE = "oozy_prepaid_ledgers";
+  const PREPAID_ENTRY_TABLE = "oozy_prepaid_entries";
+
+  function prepaidSetMessage(message,isError=false){
+    const el=$("prepaidMessage"); if(!el) return;
+    el.textContent=message||""; el.classList.toggle("error",!!isError);
+  }
+  function prepaidDbFailure(error){
+    console.error("oozy prepaid",error);
+    state.prepaidDbReady=false;
+    const notice=$("prepaidDbNotice");
+    if(notice){
+      notice.classList.remove("hidden");
+      notice.innerHTML=`선결제 DB를 불러오지 못했습니다. <b>supabase/OOZY_PREPAID_MIGRATION_20261012.sql</b> 적용 여부와 현재 계정의 OOZY 권한을 확인해 주세요.<br><small>${esc(error?.message||String(error||"조회 오류"))}</small>`;
+    }
+    if($("prepaidLedgerList")) $("prepaidLedgerList").innerHTML=errorBox(error?.message||String(error||"조회 오류"));
+    if($("prepaidEntryBody")) $("prepaidEntryBody").innerHTML=`<tr><td colspan="6">${errorBox(error?.message||String(error||"조회 오류"))}</td></tr>`;
+  }
+  function prepaidDbSuccess(){
+    state.prepaidDbReady=true;
+    $("prepaidDbNotice")?.classList.add("hidden");
+  }
+  function prepaidSelectedLedger(){
+    return state.prepaidLedgers.find(x=>x.ledger_key===state.prepaidSelectedKey)||null;
+  }
+  function prepaidEntriesFor(key){
+    return state.prepaidEntries.filter(x=>x.ledger_key===key);
+  }
+  function prepaidLedgerStats(key){
+    const entries=prepaidEntriesFor(key);
+    let deposit=0,usage=0;
+    for(const e of entries){
+      const amount=num(e.amount);
+      if(e.entry_type==="deposit") deposit+=amount; else if(e.entry_type==="usage") usage+=amount;
+    }
+    return {deposit,usage,balance:deposit-usage,count:entries.length};
+  }
+  function prepaidChronologicalRows(key){
+    const rows=prepaidEntriesFor(key).slice().sort((a,b)=>{
+      const da=String(a.entry_date||""),db=String(b.entry_date||"");
+      if(da!==db) return da.localeCompare(db);
+      const ca=String(a.created_at||""),cb=String(b.created_at||"");
+      if(ca!==cb) return ca.localeCompare(cb);
+      return String(a.entry_key||"").localeCompare(String(b.entry_key||""));
+    });
+    let balance=0;
+    return rows.map(row=>{
+      const amount=num(row.amount);
+      balance += row.entry_type==="deposit"?amount:-amount;
+      return {...row,balance_after:balance};
+    });
+  }
+  async function fetchPrepaid(){
+    const [ledgersResult,entriesResult]=await Promise.all([
+      sb.from(PREPAID_LEDGER_TABLE).select("*").order("name",{ascending:true}),
+      sb.from(PREPAID_ENTRY_TABLE).select("*").order("entry_date",{ascending:true}).order("created_at",{ascending:true})
+    ]);
+    if(ledgersResult.error) throw ledgersResult.error;
+    if(entriesResult.error) throw entriesResult.error;
+    state.prepaidLedgers=ledgersResult.data||[];
+    state.prepaidEntries=entriesResult.data||[];
+    if(!state.prepaidSelectedKey || !state.prepaidLedgers.some(x=>x.ledger_key===state.prepaidSelectedKey)){
+      state.prepaidSelectedKey=state.prepaidLedgers[0]?.ledger_key||null;
+    }
+    prepaidDbSuccess();
+    renderPrepaid();
+  }
+  function renderPrepaid(){
+    if(!$("prepaidLedgerList")) return;
+    $("prepaidLedgerCount").textContent=`${state.prepaidLedgers.length}개`;
+    if(!state.prepaidLedgers.length){
+      $("prepaidLedgerList").innerHTML=empty("등록된 선결제 장부가 없습니다.");
+    }else{
+      $("prepaidLedgerList").innerHTML=state.prepaidLedgers.map(l=>{
+        const st=prepaidLedgerStats(l.ledger_key),active=l.ledger_key===state.prepaidSelectedKey;
+        return `<button class="prepaid-ledger-item ${active?"active":""}" data-prepaid-ledger="${esc(l.ledger_key)}"><span>${esc(l.name)}</span><strong>${won(st.balance)}</strong><small>${st.count}건</small></button>`;
+      }).join("");
+      qsa("[data-prepaid-ledger]",$("prepaidLedgerList")).forEach(btn=>btn.onclick=()=>{
+        state.prepaidSelectedKey=btn.dataset.prepaidLedger; renderPrepaid();
+      });
+    }
+    const ledger=prepaidSelectedLedger();
+    $("prepaidSelectedName").textContent=ledger?.name||"장부를 선택해 주세요";
+    $("prepaidRenameLedger").disabled=!ledger;
+    $("prepaidDeleteLedger").disabled=!ledger;
+    $("prepaidAddDeposit").disabled=!ledger;
+    $("prepaidAddUsage").disabled=!ledger;
+    if(!$("prepaidEntryDate").value) $("prepaidEntryDate").value=todayKst();
+    if(!ledger){
+      $("prepaidKpis").innerHTML=kpisHtmlPrepaid({balance:0,deposit:0,usage:0});
+      $("prepaidEntryCount").textContent="0건";
+      $("prepaidEntryBody").innerHTML=`<tr><td colspan="6">${empty("왼쪽에서 장부를 선택해 주세요.")}</td></tr>`;
+      return;
+    }
+    const stats=prepaidLedgerStats(ledger.ledger_key);
+    $("prepaidKpis").innerHTML=kpisHtmlPrepaid(stats);
+    const rows=prepaidChronologicalRows(ledger.ledger_key).reverse();
+    $("prepaidEntryCount").textContent=`${rows.length}건`;
+    if(!rows.length){
+      $("prepaidEntryBody").innerHTML=`<tr><td colspan="6">${empty("거래내역이 없습니다.")}</td></tr>`;
+      return;
+    }
+    $("prepaidEntryBody").innerHTML=rows.map(row=>{
+      const deposit=row.entry_type==="deposit";
+      return `<tr><td><strong>${esc(row.entry_date||"")}</strong></td><td><span class="badge ${deposit?"cash":"ignore"}">${deposit?"선결제":"차감"}</span></td><td class="num ${deposit?"prepaid-positive":"prepaid-negative"}">${deposit?"+":"-"}${won(row.amount)}</td><td class="num"><strong>${won(row.balance_after)}</strong></td><td class="prepaid-memo-cell">${esc(row.memo||"")}</td><td class="center no-print"><div class="prepaid-row-actions"><button data-prepaid-action="date" data-entry-key="${esc(row.entry_key)}">날짜</button><button data-prepaid-action="memo" data-entry-key="${esc(row.entry_key)}">메모</button><button class="danger" data-prepaid-action="delete" data-entry-key="${esc(row.entry_key)}">삭제</button></div></td></tr>`;
+    }).join("");
+    qsa("[data-prepaid-action]",$("prepaidEntryBody")).forEach(btn=>btn.onclick=()=>handlePrepaidEntryAction(btn.dataset.prepaidAction,btn.dataset.entryKey));
+  }
+  function kpisHtmlPrepaid(stats){
+    return [
+      {label:"현재 잔액",value:stats.balance,cls:"accent"},
+      {label:"선결제 누계",value:stats.deposit,cls:"blue"},
+      {label:"차감 누계",value:stats.usage,cls:"red"}
+    ].map(x=>`<div class="kpi ${x.cls||""}"><div class="label">${esc(x.label)}</div><div class="value">${won(x.value)}</div></div>`).join("");
+  }
+  function prepaidAmountInput(id){
+    const raw=String($(id)?.value||"").replace(/,/g,"").trim();
+    const value=Number(raw);
+    return Number.isFinite(value)?Math.trunc(value):0;
+  }
+  async function createPrepaidLedger(){
+    const input=$("prepaidNewName"),name=input.value.trim();
+    if(!name){prepaidSetMessage("새 장부 이름을 입력해 주세요.",true);input.focus();return;}
+    const now=new Date().toISOString(),key=requestKey();
+    const {error}=await sb.from(PREPAID_LEDGER_TABLE).insert({ledger_key:key,name,legacy_local_id:null,created_by:state.user?.id||null,created_at:now,updated_at:now});
+    if(error) throw error;
+    input.value=""; state.prepaidSelectedKey=key; prepaidSetMessage(`'${name}' 장부를 만들었습니다.`); toast("선결제 장부를 만들었습니다."); await fetchPrepaid();
+  }
+  async function renamePrepaidLedger(){
+    const ledger=prepaidSelectedLedger(); if(!ledger) return;
+    const name=prompt("새 장부 이름",ledger.name); if(name===null) return;
+    const clean=name.trim(); if(!clean){toast("장부 이름을 입력해 주세요.");return;}
+    const {error}=await sb.from(PREPAID_LEDGER_TABLE).update({name:clean}).eq("ledger_key",ledger.ledger_key); if(error) throw error;
+    prepaidSetMessage("장부 이름을 변경했습니다."); await fetchPrepaid();
+  }
+  async function deletePrepaidLedger(){
+    const ledger=prepaidSelectedLedger(); if(!ledger) return;
+    const st=prepaidLedgerStats(ledger.ledger_key);
+    if(!confirm(`'${ledger.name}' 장부와 거래 ${st.count}건을 모두 삭제할까요?`)) return;
+    const {error}=await sb.from(PREPAID_LEDGER_TABLE).delete().eq("ledger_key",ledger.ledger_key); if(error) throw error;
+    state.prepaidSelectedKey=null; prepaidSetMessage("장부를 삭제했습니다."); toast("선결제 장부를 삭제했습니다."); await fetchPrepaid();
+  }
+  async function addPrepaidEntry(kind){
+    const ledger=prepaidSelectedLedger(); if(!ledger){prepaidSetMessage("먼저 장부를 선택해 주세요.",true);return;}
+    const amount=prepaidAmountInput(kind==="deposit"?"prepaidDepositAmount":"prepaidUsageAmount");
+    if(!(amount>0)){prepaidSetMessage("금액은 0원보다 크게 입력해 주세요.",true);return;}
+    const stats=prepaidLedgerStats(ledger.ledger_key);
+    if(kind==="usage" && amount>stats.balance){prepaidSetMessage("차감 금액이 현재 선결제 잔액보다 큽니다.",true);return;}
+    const entryDate=$("prepaidEntryDate").value||todayKst();
+    const memo=kind==="usage"?$("prepaidUsageMemo").value.trim():"";
+    const now=new Date().toISOString();
+    const body={entry_key:requestKey(),ledger_key:ledger.ledger_key,entry_date:entryDate,entry_type:kind,amount,memo,legacy_local_id:null,created_by:state.user?.id||null,created_at:now,updated_at:now};
+    const {error}=await sb.from(PREPAID_ENTRY_TABLE).insert(body); if(error) throw error;
+    if(kind==="deposit") $("prepaidDepositAmount").value="";
+    else {$("prepaidUsageAmount").value=""; $("prepaidUsageMemo").value="";}
+    prepaidSetMessage(kind==="deposit"?`선결제 ${won(amount)}을 추가했습니다.`:`${won(amount)}을 차감했습니다.`); await fetchPrepaid();
+  }
+  async function editPrepaidEntryDate(entry){
+    const value=prompt("거래일 (YYYY-MM-DD)",entry.entry_date||todayKst()); if(value===null) return;
+    const clean=value.trim(); if(!/^\d{4}-\d{2}-\d{2}$/.test(clean)){toast("날짜를 YYYY-MM-DD 형식으로 입력해 주세요.");return;}
+    const {error}=await sb.from(PREPAID_ENTRY_TABLE).update({entry_date:clean}).eq("entry_key",entry.entry_key); if(error) throw error;
+    prepaidSetMessage("거래일을 변경했습니다."); await fetchPrepaid();
+  }
+  async function editPrepaidEntryMemo(entry){
+    const value=prompt("메모",entry.memo||""); if(value===null) return;
+    const {error}=await sb.from(PREPAID_ENTRY_TABLE).update({memo:value.trim()}).eq("entry_key",entry.entry_key); if(error) throw error;
+    prepaidSetMessage("메모를 변경했습니다."); await fetchPrepaid();
+  }
+  async function deletePrepaidEntry(entry){
+    if(entry.entry_type==="deposit"){
+      const stats=prepaidLedgerStats(entry.ledger_key);
+      if(num(entry.amount)>stats.balance){toast("이 선결제 내역을 삭제하면 잔액이 마이너스가 됩니다. 먼저 이후 차감 내역을 정리해 주세요.");return;}
+    }
+    if(!confirm(`${entry.entry_date} · ${entry.entry_type==="deposit"?"선결제":"차감"} ${won(entry.amount)} 내역을 삭제할까요?`)) return;
+    const {error}=await sb.from(PREPAID_ENTRY_TABLE).delete().eq("entry_key",entry.entry_key); if(error) throw error;
+    prepaidSetMessage("거래내역을 삭제했습니다."); await fetchPrepaid();
+  }
+  async function handlePrepaidEntryAction(action,key){
+    const entry=state.prepaidEntries.find(x=>x.entry_key===key); if(!entry) return;
+    try{
+      if(action==="date") await editPrepaidEntryDate(entry);
+      else if(action==="memo") await editPrepaidEntryMemo(entry);
+      else if(action==="delete") await deletePrepaidEntry(entry);
+    }catch(e){prepaidDbFailure(e);toast("선결제 처리 실패: "+e.message);}
+  }
+  async function loadPrepaid(){
+    try{await fetchPrepaid();}
+    catch(e){prepaidDbFailure(e);}
+  }
 
   // v1.0.12 shared purchase requests + memo URLs + config compatibility -------
   function requestKey(){
@@ -561,6 +756,7 @@
       if(state.page==="dashboard") await loadDashboard();
       else if(state.page==="oozySales") await loadOozySales();
       else if(state.page==="oozyPurchase") await loadOozyPurchase();
+      else if(state.page==="prepaid") await loadPrepaid();
       else if(state.page==="purchaseRequests") await loadPurchaseRequests();
       else if(state.page==="kcem") await loadKcem();
       else if(state.page==="uwash") await loadUwash();
@@ -574,6 +770,13 @@
   qsa("[data-mode-group]").forEach(group=>qsa("button[data-mode]",group).forEach(b=>b.onclick=()=>{ const key=group.dataset.modeGroup; state.mode[key]=b.dataset.mode; qsa("button",group).forEach(x=>x.classList.toggle("active",x===b)); renderPeriodControl(key); refreshCurrent(false); }));
   qsa("#uwashLedgerTabs button").forEach(b=>b.onclick=()=>{state.uwashLedger=b.dataset.ledger;qsa("#uwashLedgerTabs button").forEach(x=>x.classList.toggle("active",x===b));refreshCurrent(false);});
   qsa(".print-button").forEach(b=>b.onclick=()=>window.print());
+  $("prepaidRefreshButton").onclick=()=>loadPrepaid();
+  $("prepaidCreateLedger").onclick=()=>createPrepaidLedger().catch(e=>{prepaidDbFailure(e);prepaidSetMessage("장부 생성 실패: "+e.message,true);});
+  $("prepaidNewName").onkeydown=e=>{if(e.key==="Enter"){e.preventDefault();$("prepaidCreateLedger").click();}};
+  $("prepaidRenameLedger").onclick=()=>renamePrepaidLedger().catch(e=>{prepaidDbFailure(e);toast("이름 변경 실패: "+e.message);});
+  $("prepaidDeleteLedger").onclick=()=>deletePrepaidLedger().catch(e=>{prepaidDbFailure(e);toast("장부 삭제 실패: "+e.message);});
+  $("prepaidAddDeposit").onclick=()=>addPrepaidEntry("deposit").catch(e=>{prepaidDbFailure(e);prepaidSetMessage("선결제 추가 실패: "+e.message,true);});
+  $("prepaidAddUsage").onclick=()=>addPrepaidEntry("usage").catch(e=>{prepaidDbFailure(e);prepaidSetMessage("차감 실패: "+e.message,true);});
   $("requestQuickAdd").onclick=quickAddPurchaseRequest;
   $("requestNatural").onkeydown=e=>{if(e.key==="Enter"){e.preventDefault();quickAddPurchaseRequest();}};
   $("requestSave").onclick=saveManualPurchaseRequest;

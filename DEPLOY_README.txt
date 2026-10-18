@@ -49,3 +49,5 @@ v1.0.12: Supabase 웹 설정 호환성 수정.
 - jsDelivr 실패 시 unpkg Supabase 라이브러리 fallback
 - 메모 URL 새 탭 링크(v1.0.11) 유지
 - DB/SQL 변경 없음
+
+v1.0.13: Added OOZY prepaid ledger web CRUD backed by public.oozy_prepaid_ledgers / public.oozy_prepaid_entries. Run supabase/OOZY_PREPAID_MIGRATION_20261012.sql once before using the page.

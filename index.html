@@ -18,7 +18,7 @@
       <div class="brand-mark">O</div>
       <div>
         <h1>OOZY 통합 매출관리</h1>
-        <p>OOZY · 박물관 · 유워시 매출/장부 조회 · 공동 구매요청</p>
+        <p>OOZY · 박물관 · 유워시 매출/장부 조회 · 선결제 · 공동 구매요청</p>
       </div>
       <label class="field-label" for="loginId">관리자 아이디 또는 이메일</label>
       <input id="loginId" class="input" autocomplete="username" placeholder="관리자 계정" />
@@ -26,7 +26,7 @@
       <input id="loginPassword" class="input" type="password" autocomplete="current-password" placeholder="비밀번호" />
       <button id="loginButton" class="button primary full">로그인</button>
       <div id="loginMessage" class="login-message"></div>
-      <p class="login-note">매출·장부는 조회/출력 중심이며, 공동 구매요청은 UWASH · OOZY · KCEM이 같은 DB를 함께 사용합니다.</p>
+      <p class="login-note">OOZY 선결제 장부는 Supabase 원본을 사용하며, 공동 구매요청은 UWASH · OOZY · KCEM이 같은 DB를 함께 사용합니다.</p>
     </section>
   </main>
 
@@ -54,6 +54,7 @@
         <button class="nav active" data-page="dashboard"><span>⌂</span>대시보드</button>
         <button class="nav" data-page="oozySales"><span>₩</span>우지 매출</button>
         <button class="nav" data-page="oozyPurchase"><span>▤</span>우지 매입</button>
+        <button class="nav" data-page="prepaid"><span>◈</span>선결제 장부</button>
         <button class="nav" data-page="purchaseRequests"><span>✓</span>구매요청</button>
         <button class="nav" data-page="kcem"><span>▦</span>박물관 장부</button>
         <button class="nav" data-page="uwash"><span>◫</span>유워시 장부</button>
@@ -100,6 +101,54 @@
           <article class="panel"><div id="oozyPurchaseBody"></div></article>
         </section>
 
+
+        <section id="prepaidPage" class="page">
+          <div class="page-title-row">
+            <div><h2>선결제 장부</h2><p class="muted">Supabase를 원본으로 사용하는 OOZY 선결제/차감 장부입니다.</p></div>
+            <div class="prepaid-title-actions no-print"><button id="prepaidRefreshButton" class="button outline">새로고침</button><button class="button outline print-button">인쇄</button></div>
+          </div>
+
+          <div id="prepaidDbNotice" class="request-notice hidden">선결제 DB를 불러오지 못했습니다. <b>supabase/OOZY_PREPAID_MIGRATION_20261012.sql</b> 적용 여부와 현재 계정의 OOZY 권한을 확인해 주세요.</div>
+
+          <div class="prepaid-layout">
+            <aside class="panel prepaid-ledger-panel no-print">
+              <div class="prepaid-side-head"><strong>장부</strong><span id="prepaidLedgerCount">0개</span></div>
+              <div class="prepaid-create-row"><input id="prepaidNewName" placeholder="새 장부 이름" /><button id="prepaidCreateLedger" class="button primary">생성</button></div>
+              <div id="prepaidLedgerList" class="prepaid-ledger-list"></div>
+            </aside>
+
+            <div class="prepaid-main">
+              <article class="panel prepaid-selected-head">
+                <div><span class="prepaid-eyebrow">선택 장부</span><h3 id="prepaidSelectedName">장부를 선택해 주세요</h3></div>
+                <div class="prepaid-ledger-actions no-print"><button id="prepaidRenameLedger" class="button ghost">이름 변경</button><button id="prepaidDeleteLedger" class="button ghost danger">장부 삭제</button></div>
+              </article>
+
+              <div id="prepaidKpis" class="kpi-grid prepaid-kpis"></div>
+
+              <article class="panel prepaid-entry-panel no-print">
+                <div class="prepaid-entry-grid">
+                  <label><span>거래일</span><input id="prepaidEntryDate" type="date" /></label>
+                  <label><span>선결제 추가</span><input id="prepaidDepositAmount" inputmode="numeric" placeholder="금액" /></label>
+                  <div class="prepaid-action-field"><span>&nbsp;</span><button id="prepaidAddDeposit" class="button primary">선결제 추가</button></div>
+                  <label><span>차감 금액</span><input id="prepaidUsageAmount" inputmode="numeric" placeholder="금액" /></label>
+                  <label class="prepaid-memo-field"><span>차감 메모</span><input id="prepaidUsageMemo" placeholder="예: 아메리카노 2잔" /></label>
+                  <div class="prepaid-action-field"><span>&nbsp;</span><button id="prepaidAddUsage" class="button outline">차감</button></div>
+                </div>
+                <div id="prepaidMessage" class="request-message prepaid-message"></div>
+              </article>
+
+              <article class="panel prepaid-list-panel">
+                <div class="panel-head prepaid-list-head"><h3>거래내역</h3><span id="prepaidEntryCount" class="muted">0건</span></div>
+                <div class="table-wrap prepaid-table-wrap">
+                  <table class="table prepaid-table">
+                    <thead><tr><th>거래일</th><th>구분</th><th class="num">금액</th><th class="num">거래 후 잔액</th><th>메모</th><th class="center no-print">관리</th></tr></thead>
+                    <tbody id="prepaidEntryBody"></tbody>
+                  </table>
+                </div>
+              </article>
+            </div>
+          </div>
+        </section>
 
         <section id="purchaseRequestsPage" class="page">
           <div class="page-title-row request-title-row">
